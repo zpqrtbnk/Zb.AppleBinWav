@@ -81,9 +81,23 @@ namespace ZbAppleBinWav
             if (result == true)
             {
                 var filename = dialog.FileName;
-                _data = File.ReadAllBytes(filename);
+
+                //_data = File.ReadAllBytes(filename);
+
+                var block = new IntelHex().ReadAllBlocks(filename).FirstOrDefault();
+                if (block == null)
+                {
+                    _data = null;
+                    BytesLength.Content = "No data.";
+                    return;
+                }
+
+                _data = block.Data;
+
                 var length = _data.Length;
-                BytesLength.Content = string.Format("0x{0:X4} bytes\r\n\r\n0000.{1:X4}R", length, length - 1);
+                //BytesLength.Content = string.Format("0x{0:X4} bytes\r\n\r\n0000.{1:X4}R", length, length - 1);
+                BytesLength.Content = string.Format("{0}\r\n0x{1:X4} bytes at 0x{2:X4}\r\n{2:X4}.{3:X4}R",
+                    System.IO.Path.GetFileName(filename), length, block.Address, block.Address + length - 1);
             }
         }
     }
