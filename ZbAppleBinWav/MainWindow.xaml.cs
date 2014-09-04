@@ -34,6 +34,9 @@ namespace ZbAppleBinWav
 
         private WaveOut _waveOut;
         private byte[] _data;
+        private string _filename;
+        private FileSystemWatcher _fileWatcher;
+        private bool _dirty;
 
         private void Play_Click(object sender, RoutedEventArgs e)
         {
@@ -76,28 +79,57 @@ namespace ZbAppleBinWav
             
             var result = dialog.ShowDialog();
 
-            // todo - load various binary formats from disk
-
             if (result == true)
             {
-                var filename = dialog.FileName;
+                _filename = dialog.FileName;
+                LoadFile();
 
-                //_data = File.ReadAllBytes(filename);
+                if (_fileWatcher != null)
+                    _fileWatcher.Dispose();
 
-                var block = new IntelHex().ReadAllBlocks(filename).FirstOrDefault();
-                if (block == null)
+                _fileWatcher = new FileSystemWatcher(System.IO.Path.GetDirectoryName(_filename), System.IO.Path.GetFileName(_filename));
+                _fileWatcher.Changed += (o, args) =>
                 {
-                    _data = null;
-                    BytesLength.Content = "No data.";
-                    return;
-                }
+                    _dirty = true;
+                    Display.Dispatcher.Invoke(() =>
+                    {
+                        var s = Display.Content.ToString();
+                        var p = s.IndexOf('\r');
+                        if (s[p - 1] == '*') return;
+                        Display.Content = s.Substring(0, p) + " *" + s.Substring(p);
+                    });
+                };
+                _fileWatcher.EnableRaisingEvents = true;
+            }
+        }
 
-                _data = block.Data;
+        void LoadFile()
+        {
+            //_data = File.ReadAllBytes(filename);
 
-                var length = _data.Length;
-                //BytesLength.Content = string.Format("0x{0:X4} bytes\r\n\r\n0000.{1:X4}R", length, length - 1);
-                BytesLength.Content = string.Format("{0}\r\n0x{1:X4} bytes at 0x{2:X4}\r\n{2:X4}.{3:X4}R",
-                    System.IO.Path.GetFileName(filename), length, block.Address, block.Address + length - 1);
+            _dirty = false;
+
+            var block = new IntelHex().ReadAllBlocks(_filename).FirstOrDefault();
+            if (block == null)
+            {
+                _data = null;
+                Display.Content = "No data.";
+                return;
+            }
+
+            _data = block.Data;
+
+            var length = _data.Length;
+            //BytesLength.Content = string.Format("0x{0:X4} bytes\r\n\r\n0000.{1:X4}R", length, length - 1);
+            Display.Content = string.Format("{0}\r\n0x{1:X4} bytes at 0x{2:X4}\r\n{2:X4}.{3:X4}R",
+                System.IO.Path.GetFileName(_filename), length, block.Address, block.Address + length - 1);
+        }
+
+        private void Display_DoubleClick(object sender, MouseButtonEventArgs e)
+        {
+            if (_waveOut == null && _dirty && !string.IsNullOrWhiteSpace(_filename))
+            {
+                LoadFile();
             }
         }
     }
