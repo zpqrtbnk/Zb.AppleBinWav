@@ -90,12 +90,12 @@ namespace ZbAppleBinWav
                 _fileWatcher = new FileSystemWatcher(System.IO.Path.GetDirectoryName(_filename), System.IO.Path.GetFileName(_filename));
                 _fileWatcher.Changed += (o, args) =>
                 {
+                    if (_dirty) return;
                     _dirty = true;
                     Display.Dispatcher.Invoke(() =>
                     {
                         var s = Display.Content.ToString();
                         var p = s.IndexOf('\r');
-                        if (s[p - 1] == '*') return;
                         Display.Content = s.Substring(0, p) + " *" + s.Substring(p);
                     });
                 };
