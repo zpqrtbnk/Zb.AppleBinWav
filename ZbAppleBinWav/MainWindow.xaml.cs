@@ -30,6 +30,10 @@ namespace ZbAppleBinWav
             //_data = Encoding.UTF8.GetBytes("Hello, world! How are we doing today? Feeling good?      ZZZZ");
             //var length = _data.Length;
             //BytesLength.Content = string.Format("0x{0:X4} bytes ie 0000.{1:X4}R", length, length - 1);
+
+            ReloadButton.Visibility = Visibility.Hidden;
+            PlayButton.IsEnabled = false;
+            _savedBrush = FileNameBorder.BorderBrush;
         }
 
         private WaveOut _waveOut;
@@ -37,6 +41,8 @@ namespace ZbAppleBinWav
         private string _filename;
         private FileSystemWatcher _fileWatcher;
         private bool _dirty;
+        private readonly Brush _savedBrush;
+        private readonly Brush _dirtyBrush = new SolidColorBrush(Color.FromRgb(198, 0, 0));
 
         private void Play_Click(object sender, RoutedEventArgs e)
         {
@@ -45,14 +51,14 @@ namespace ZbAppleBinWav
 
             if (_waveOut != null)
             {
-                PlayButton.Content = "Play";
+                PlayButton.Content = "play";
                 _waveOut.Stop();
                 _waveOut.Dispose();
                 _waveOut = null;
                 return;
             }
 
-            PlayButton.Content = "Stop";
+            PlayButton.Content = "stop";
 
             var waveProvider = new DataWaveProvider(_data);
             _waveOut = new WaveOut();
@@ -62,7 +68,7 @@ namespace ZbAppleBinWav
             // only for automatic stop (end of wav) not manual stop
             _waveOut.PlaybackStopped += (o, args) =>
             {
-                PlayButton.Content = "Play";
+                PlayButton.Content = "play";
                 _waveOut.Dispose();
                 _waveOut = null;
             };
@@ -94,9 +100,8 @@ namespace ZbAppleBinWav
                     _dirty = true;
                     Display.Dispatcher.Invoke(() =>
                     {
-                        var s = Display.Content.ToString();
-                        var p = s.IndexOf('\r');
-                        Display.Content = s.Substring(0, p) + " *" + s.Substring(p);
+                        ReloadButton.Visibility = Visibility.Visible;
+                        FileNameBorder.BorderBrush = _dirtyBrush;
                     });
                 };
                 _fileWatcher.EnableRaisingEvents = true;
@@ -108,12 +113,17 @@ namespace ZbAppleBinWav
             //_data = File.ReadAllBytes(filename);
 
             _dirty = false;
+            ReloadButton.Visibility = Visibility.Hidden;
+            FileNameBorder.BorderBrush = _savedBrush;
+            FileNameLabel.Content = System.IO.Path.GetFileName(_filename);
 
+            // todo - detect file errors & report properly
             var block = new IntelHex().ReadAllBlocks(_filename).FirstOrDefault();
             if (block == null)
             {
                 _data = null;
-                Display.Content = "No data.";
+                Display.Content = "No data?";
+                PlayButton.IsEnabled = false;
                 return;
             }
 
@@ -121,11 +131,13 @@ namespace ZbAppleBinWav
 
             var length = _data.Length;
             //BytesLength.Content = string.Format("0x{0:X4} bytes\r\n\r\n0000.{1:X4}R", length, length - 1);
-            Display.Content = string.Format("{0}\r\n0x{1:X4} bytes at 0x{2:X4}\r\n{2:X4}.{3:X4}R",
-                System.IO.Path.GetFileName(_filename), length, block.Address, block.Address + length - 1);
+            Display.Content = string.Format("0x{0:X4} bytes at 0x{1:X4}\r\n{1:X4}.{2:X4}R",
+                length, block.Address, block.Address + length - 1);
+
+            PlayButton.IsEnabled = true;
         }
 
-        private void Display_DoubleClick(object sender, MouseButtonEventArgs e)
+        private void ReloadButton_Click(object sender, RoutedEventArgs e)
         {
             if (_waveOut == null && _dirty && !string.IsNullOrWhiteSpace(_filename))
             {
