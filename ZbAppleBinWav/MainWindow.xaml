@@ -45,7 +45,7 @@
                 Visibility="Visible" HorizontalAlignment="Left" Height="36" Margin="96,128,0,0" VerticalAlignment="Top" Width="64" BorderThickness="2" FontWeight="Bold"
                 Click="ReloadButton_Click"/>
         <Border x:Name="FileNameBorder" BorderBrush="#FF707070" BorderThickness="1" Width="256" Height="32" HorizontalAlignment="Left" VerticalAlignment="Top">
-            <Label x:Name="FileNameLabel" Content="Label" HorizontalAlignment="Left" Height="32" Margin="0" VerticalAlignment="Top" Width="256" BorderThickness="1"/>
+            <Label x:Name="FileNameLabel" Content="" HorizontalAlignment="Left" Height="32" Margin="0" VerticalAlignment="Top" Width="256" BorderThickness="1"/>
         </Border>
     </Grid>
 </Window>
