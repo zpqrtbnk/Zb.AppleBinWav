@@ -144,5 +144,15 @@ namespace ZbAppleBinWav
                 LoadFile();
             }
         }
+
+        private void Move_MouseDown(object sender, MouseButtonEventArgs e)
+        {
+            this.DragMove();
+        }
+
+        private void Close_MouseDown(object sender, MouseButtonEventArgs e)
+        {
+            this.Close();
+        }
     }
 }
