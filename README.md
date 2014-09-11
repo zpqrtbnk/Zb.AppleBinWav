@@ -26,4 +26,4 @@ I have recently been able to recover two machines (S/N IA2S2-504523 label "8046"
 
 Because I was tired of copying my experimental code from my PC to the Apple manually, I wrote Zb.AppleBinWav to I could transfer the binaries over the cassette port.
 
-And... I now have a smooth image moving accross the screen. Done.
+And... I now have a smooth image moving accross the screen. Done. Source code in the *asm* directory: it's probably ugly, but it works.
