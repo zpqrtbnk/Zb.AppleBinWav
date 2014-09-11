@@ -1,0 +1,881 @@
+; as65 -ivs2ph0
+
+; STATUS
+; loop works but simple loop flickers, even if slow
+;   because for a number of cycles, there's nothing in memory
+; page-flipping working on emu & real, with flicker
+; add fixed VBLANK... WORKS!
+
+; L8TR
+; vaporlock
+;   refactor full version for europlus!
+
+			;org $300
+			;org $4000
+			org	$6000
+
+			; SOFT SWITCHES
+SSKBD		equ		$c000		; keyboard
+SSFULL		equ		$c052		; full screen
+SSGRPH		equ		$C050		; graphics
+SSTEXT		equ		$C051		; text
+SSHRES		equ		$C057		; hires
+SSPAGE1		equ		$C054		; page 1
+SSPAGE2		equ		$C055		; page 2
+SSNIFF		equ		$C020		; cassette out
+SSVBLK		equ		$C019		; VBLANK (IIe only)
+
+			; SYSTEM
+SYSVER		equ 	$FBB3		; system ID byte location
+SYSIIE		equ 	$06			; ID value for IIe
+SYSWAIT		equ		$FCA8		; monitor delay subroutine
+
+GRPAGE1		equ		$2000
+GRPAGE2		equ		$4000
+
+			; SYSWAIT
+			; see http://apple2.org.za/gswv/a2zine/GS.WorldView/Resources/USEFUL.TABLES/WAIT.DELAY.CR.txt
+			; A=$02 : 50 cycles
+			; A=$05 : 143 cycles
+			; including JSR and RTS
+	
+			; BRANCH
+			; cycles...
+			; add 1 if branch occurs, on same page
+			; add 2 if branch occurs, on diff page
+	
+			; PAGE
+			; Page 0 is $0000-$00FF
+			; Page 1 is $0100-$01FF
+			; etc
+	
+			; ID patch values
+ID0			equ		$DB
+ID1			equ		$24
+ID2			equ		$B6
+ID3			equ		$49
+ID4			equ		$88
+ID5			equ		$F3
+
+			; tmpfix
+PTR0		equ		$FA
+PTR1		equ		$FC
+PTR2		equ		$FE
+PTRX		equ		$EB
+
+			
+; ******** ******** ******** ******** ******** ******** ******** ********
+; main
+
+MAIN
+			jsr		MAIN2
+			brk
+
+ISINIT		db		$00
+
+MAIN1			
+			lda		ISINIT
+			bne		MAIN1.1
+						
+			jsr		REVSPR
+			jsr		PREPSPR
+			dec		ISINIT
+
+MAIN1.1
+			lda		#hi GRPAGE1
+			jsr		CLRPAGE
+			jsr		VBLANK1I
+			jsr		SETGRAPH
+			
+MAIN1.4
+			ldx		#$02		; initial x column byte number
+			stx		PTRX
+			ldx		#$00		; initial offset
+			stx		PTRX+1
+			
+MAIN1.2
+			; paint
+			ldx		PTRX		; x - column byte number
+			ldy		#$30		; fixed row number
+			lda		#hi GRPAGE1
+			jsr		CALCORG		; initialize position for paint, in PTR0
+
+			lda		PTRX+1		; sprite offset
+			jsr		CALCSPR		; initialize sprite source for paint, in PTR1
+
+			jsr		PAINTA		; paint
+
+			; pause - but even with $60 it's slow but still flickers?!
+			lda		#$30
+			jsr		SYSWAIT
+			
+			; remove
+			ldx		PTRX		; x - column byte number
+			ldy		#$30		; fixed row number
+			lda		#hi GRPAGE1
+			jsr		CALCORG		; initialize position for paint, in PTR0
+
+			lda		PTRX+1		; sprite offset
+			jsr		CALCSPR		; initialize sprite source for paint, in PTR1
+
+			;jsr		VBLANK1	; fails - too slow at repainting?
+			jsr		PAINTA		; paint
+			
+			lda		SSKBD		; keyboard
+			and		#$80		; set if a key is waiting (POP just doing BCL...)?
+			bne		MAIN1.3
+
+			; incr offset, 7 values from 00 to 06
+			ldx		PTRX+1
+			inx
+			stx		PTRX+1
+			txa
+			;and		#$08
+			;beq		MAIN1.2
+			cmp		#$07
+			bne		MAIN1.2
+			
+			; incr pos
+			ldx		#$00
+			stx		PTRX+1			
+			ldx		PTRX
+			inx
+			stx		PTRX
+			txa
+			and		#$20
+			beq		MAIN1.2
+			jmp		MAIN1.4
+MAIN1.3
+			jsr		SETTEXT
+MAIN1_
+			rts
+
+MAIN2.PAGE	db		$00
+MAIN2.POS1	db		$00
+MAIN2.OFS1	db		$00
+MAIN2.POS2	db		$00
+MAIN2.OFS2	db		$00
+MAIN2.POS	db		$00
+MAIN2.OFS	db		$00
+			
+MAIN2
+			lda		ISINIT
+			bne		MAIN2.1
+						
+			jsr		REVSPR
+			jsr		PREPSPR
+			dec		ISINIT
+
+MAIN2.1
+			; clear page 1
+			lda		#hi GRPAGE1
+			jsr		CLRPAGE
+			; clear page 2
+			lda		#hi GRPAGE2
+			jsr		CLRPAGE			
+			; graphix
+			jsr		VBLANK1I
+			jsr		SETGRAPH
+			
+			lda		#hi GRPAGE2	; initial page (inverted)
+			sta		MAIN2.PAGE
+			lda		#$02		; initial x
+			sta		MAIN2.POS
+			lda 	#$00
+			sta		MAIN2.OFS
+			sta		MAIN2.OFS1
+			sta		MAIN2.OFS2
+			sta		MAIN2.POS1
+			sta		MAIN2.POS2
+MAIN2.L
+			lda		SSKBD		; keyboard
+			bpl		MAIN2.LX
+			sta		$c010
+			jmp		MAIN2_
+MAIN2.LX			
+			lda		MAIN2.PAGE
+			cmp		#hi GRPAGE1	; painting page 1?
+			bne		MAIN2.2		; not ->
+			ldx		MAIN2.POS1	; painting page 1: load page 1 saved positions
+			ldy		MAIN2.OFS1
+			jmp		MAIN2.3
+MAIN2.2
+			ldx		MAIN2.POS2	; painting page 2: load page 2 saved positions
+			ldy		MAIN2.OFS2
+MAIN2.3
+			; if x != 0 then clear
+			txa
+			beq		MAIN2.X
+			tya
+			pha
+			
+			; clear
+			; x already contains POSx
+			ldy		#$30		; fixed row number
+			lda		MAIN2.PAGE
+			jsr		CALCORG		; initialize position for paint, in PTR0
+			pla					; pop OFSx
+			jsr		CALCSPR		; initialize sprite source for paint, in PTR1
+			jsr		PAINTA		; paint
+			
+MAIN2.X			
+			; calc next ofs, 7 values from 00 to 06
+			ldx		MAIN2.OFS
+			inx
+			stx		MAIN2.OFS
+			txa
+			;and		#$08
+			;beq		MAIN2.P
+			cmp		#$07
+			bne		MAIN2.P
+			
+			; reset ofs, calc next pos
+			ldx		#$00
+			stx		MAIN2.OFS
+			ldx		MAIN2.POS
+			inx
+			stx		MAIN2.POS
+			txa
+			and		#$20
+			beq		MAIN2.P
+			
+			; reset pos
+			lda		#$02
+			sta		MAIN2.POS
+MAIN2.P
+			; paint
+			ldx		MAIN2.POS
+			ldy		#$30		; fixed row number
+			lda		MAIN2.PAGE
+			jsr		CALCORG		; initialize position for paint, in PTR0
+			lda		MAIN2.OFS
+			jsr		CALCSPR		; initialize sprite source for paint, in PTR1
+			jsr		PAINTA		; paint
+			
+			; vblank, store+flip
+			;jsr		VBLANK1
+			
+			lda		MAIN2.PAGE
+			cmp		#hi GRPAGE1		; was painting page 1?
+			bne		MAIN2.A1		; not ->
+			bit		SSPAGE1			; display page 1
+			lda		#hi GRPAGE2
+			sta		MAIN2.PAGE
+			lda		MAIN2.POS
+			sta		MAIN2.POS1		; save page 1 positions
+			lda		MAIN2.OFS
+			sta		MAIN2.OFS1
+			jmp		MAIN2.A2
+MAIN2.A1
+			bit		SSPAGE2			; display page 2
+			lda		#hi GRPAGE1
+			sta		MAIN2.PAGE
+			lda		MAIN2.POS
+			sta		MAIN2.POS2		; save page 2 positions
+			lda		MAIN2.OFS
+			sta		MAIN2.OFS2
+MAIN2.A2
+			;jsr PAUSE
+
+			; pause
+			lda		#$30
+			jsr		SYSWAIT
+			jmp		MAIN2.L		
+			
+MAIN2_
+			; text
+			jsr		SETTEXT
+			bit		SSPAGE1
+			rts
+			
+			; debug
+PAUSE		lda		SSKBD		; keyboard
+			bpl		PAUSE
+			sta		$c010
+			rts
+			
+; ******** ******** ******** ******** ******** ******** ******** ********
+; vblank1
+
+VBLANK1I
+			; store marker FF on line 3F hidden byte
+			lda #$FF			
+			sta $3FF8		; for page 1
+			sta $3FF9
+			sta $3FFA
+			sta $3FFB
+			sta $3FFC
+			sta $3FFD
+			sta $3FFE
+			sta $5FF8		; and page 2
+			sta $5FF9
+			sta $5FFA
+			sta $5FFB
+			sta $5FFC
+			sta $5FFD
+			sta $5FFE
+			
+			; store marker F0 on line 3A hidden bytes
+			; for classic II+ video
+			lda #$F0
+			sta $2BF8		; for page 1
+			sta $2BF9
+			sta $2BFA
+			sta $2BFB
+			sta $2BFC
+			sta $2BFD
+			sta $2BFE
+			sta $4BF8		; and page 2
+			sta $4BF9
+			sta $4BFA
+			sta $4BFB
+			sta $4BFC
+			sta $4BFD
+			sta $4BFE
+			
+			; store marker F1 on line ?? hidden bytes
+			; for europlus video
+			lda #$F1
+			sta	$20F8		; for page 1
+			sta	$20F9
+			sta	$20FA
+			sta	$20FB
+			sta	$20FC
+			sta	$20FD
+			sta	$20FE
+			sta	$40F8		; and page 2
+			sta	$40F9
+			sta	$40FA
+			sta	$40FB
+			sta	$40FC
+			sta	$40FD
+			sta	$40FE
+VBLANK1I_
+			rts
+
+			; must fit one one page
+			; insert page alignment here
+			align $100
+VBLANK1
+			php
+			pha
+
+VBLANK1.1	lda 	#$FF
+VBLANK1.2	cmp 	SSNIFF		; (+4) compare every 7 cycles
+			bne 	VBLANK1.2	; (+2/3)
+	
+			lda 	#$02		; (+2)
+			jsr 	SYSWAIT		; (+6+44)
+	
+			pha					; (+3)
+			pla					; (+4)
+	
+			; +4+2+2+(6+44)+3+4 = +65
+			; = next line, same position
+	
+			lda 	SSNIFF
+			bpl		VBLANK1.1
+			
+			; depending on value
+			; could figure out europlus
+
+VBLANK1_
+			pla
+			plp
+			rts
+
+; ******** ******** ******** ******** ******** ******** ******** ********
+; vaporlock
+
+			; vaporlock must fit one one page
+			; insert page alignment here
+			; TEMP disabled
+			;align $100
+
+VAPORLOCK
+			php					; save flags
+			pha					; save accumulator
+	
+			; write ID patch
+			lda		#ID0		; to line...
+			sta		$3FF8
+			sta		$3FF9
+			sta		$3FFA
+			sta		$3FFB
+			sta		$3FFC
+			sta		$3FFD
+			sta		$3FFE
+	
+			lda		#ID1		; to line...
+			sta 	$2BF8
+			sta 	$2BF9
+			sta 	$2BFA
+			sta 	$2BFB
+			lda 	#ID2
+			sta 	$2BFC
+			sta 	$2BFD
+			sta 	$2BFE
+			
+			lda 	#ID3		; to line...
+			sta 	$2FF8
+			sta 	$2FF9
+			lda 	#ID4
+			sta 	$2FFA
+			sta 	$2FFB
+			
+			lda 	#ID5		; to line...
+			sta 	$33F8
+			lda 	#ID5-1
+			sta 	$33F9
+			
+			; check for IIe
+			lda 	#SYSIIE
+			cmp 	SYSVER
+			bne 	MORE0
+VBFIND		bit 	SSVBLK		; wait till IIe blanking starts
+			bmi 	VBFIND
+	
+			; full hires page 1
+MORE0		bit 	SSGRPH		; graphics
+			bit 	SSHRES		; hires
+			bit 	SSFULL		; full
+			bit		SSPAGE1		; page 1
+	
+			; lock
+LOCK		lda 	#ID0		; wait for 1st ID
+RETR1		cmp 	SSNIFF		; (+4) compare every 7 cycles
+			bne 	RETR1		; (+2/3)
+	
+			lda 	#$02		; (+2)
+			jsr 	SYSWAIT		; (+6+44)
+	
+			pha					; (+3)
+			pla					; (+4)
+	
+			; +4+2+2+(6+44)+3+4 = +65
+			; = next line, same position
+	
+			lda 	SSNIFF		; check for 2nd ID (+4)
+			cmp 	#ID2		; jitter 4, 5 or 6 (+2)
+			beq 	MORE1		; (+2/3)
+			cmp 	#ID1		; jitter 0, 1, 2 or 3 (+2)
+			beq 	MORE1		; (+2/3)
+			bne 	LOCK		; try again
+	
+MORE1		lda 	#$02		; (+2)
+			jsr 	SYSWAIT		; (+6+44)
+	
+			; #ID2: +4+2+3+2+(6+44) = +61	
+			; #ID1: +4+2+2+2+3+(6+44) = +65
+			; = next line, adjusted position
+	
+			lda 	SSNIFF		; check for 3rd ID (+4)
+			cmp 	#ID4		; jitter 2 or 3 (+2)
+			beq 	MORE2		; (+2/3)
+			cmp 	#ID3		; jitter 0 or 1 (+2)
+			beq 	MORE3		; (+2/3)	
+MORE2		bne 	LOCK		; try again (+2/3)	
+
+MORE3		lda 	#$02		; (+2)
+			jsr 	SYSWAIT	; (+6+44)
+	
+			; #ID4: +4+2+3+2+2+(6+44) = +63
+			; #ID3: +4+2+2+2+3+2+(6+44) = +65
+			; = next line, adjusted position
+
+			lda 	SSNIFF		; check for 4th ID (+4)
+			lsr 	a			; shift right into carry (+2)
+			bcs 	MORE4		; equalize 1 count (+2/3)
+MORE4		cmp 	#ID5/2		; (+2)
+			bne 	LOCK		; try again (+2/3)
+	
+			; #ID5: +4+2+3+2+2 = +13
+			; #ID5-1: +4+2+2+2+2 = +12
+			; = ?
+	
+			; at that point we have the lock
+			; in a constant number of cycles
+	
+			nop					; (+2)
+	
+			; stall??
+	
+			pla					; restore accumulator
+			plp					; restore flags	
+			rts
+	
+; ******** ******** ******** ******** ******** ******** ******** ********
+; set graph mode, page 1
+
+SETGRAPH	bit		SSGRPH		; graphics
+			bit		SSHRES		; hires
+			bit		SSFULL		; full
+			bit		SSPAGE1		; page 1
+			rts
+
+; ******** ******** ******** ******** ******** ******** ******** ********
+; set text mode
+
+SETTEXT		bit		SSTEXT		; text
+			rts
+
+; ******** ******** ******** ******** ******** ******** ******** ********
+; clear page
+; in
+;   a: page ($20 or $40)
+
+CLRPAGE
+			tay
+			sty		PTR0+1
+			lda 	#$00
+			sta		PTR0
+			ldy 	#$00		; init index
+			ldx		#$20		; page count
+CLRPAGE.1	sta		(PTR0),y
+			iny
+			bne 	CLRPAGE.1
+			inc		PTR0+1
+			dex
+			bne 	CLRPAGE.1
+CLRPAGE_
+			rts
+
+; ******** ******** ******** ******** ******** ******** ******** ********
+; calculates sprites origin for painting
+; in
+;   a: sprite no (0-6) for the 7 offsets within a column
+; out
+;   ptr1: address (dw)
+
+CALCSPR
+			tax
+			
+			lda		#lo SPRSRC
+			sta		PTR1
+			lda		#hi SPRSRC
+			sta		PTR1+1
+
+			txa
+			beq		CALCSPR_
+			
+CALCSPR.1			
+			clc
+			lda		PTR1
+			adc		#SPRROWS*SPRCOLS
+			sta		PTR1
+			lda		PTR1+1
+			adc		#$00
+			sta		PTR1+1
+			
+			dex
+			bne		CALCSPR.1
+CALCSPR_
+			rts
+			
+; ******** ******** ******** ******** ******** ******** ******** ********
+; calculates origin for painting
+; in
+;   x: column byte number $00-$27
+;   y: row number $00-$BF
+;   a: page ($20 or $40)
+; out
+;   ptr0: address (dw)
+
+CALCORG
+			sta		PTR0+1
+			lda #$00
+			sta		PTR0			
+			
+			; 2000,2100,2200,2300 - for rows 00,10,20,30
+			tya			
+			and		#$30
+			lsr		a			; line 0x23 => 0x02
+			lsr		a
+			lsr		a
+			lsr		a
+			clc
+			adc		PTR0+1
+			sta		PTR0+1
+			
+			; 2000,2400,2800...3C00 - for rows 00,01,02...07
+			tya
+			and		#$07
+			asl		a			; line 0x09 => 0x01 => 0x04
+			asl		a
+			clc
+			adc		PTR0+1
+			sta		PTR0+1
+			
+			; 2000,2080 - for rows 00-07,08-0F
+			tya
+			and		#$08
+			beq		CALCORG.1
+			clc
+			lda		#$80
+			adc		PTR0
+			sta		PTR0
+			
+			; 2000,2028,2050 - for rows 00-3F,40-7F,80-BF
+CALCORG.1	tya
+			and		#$80
+			beq		CALCORG2
+			clc
+			lda		#$50
+			adc		PTR0
+			sta		PTR0
+			jmp 	CALCORG3
+
+CALCORG2	tya
+			and		#$40
+			beq		CALCORG3
+			clc
+			lda		#$28
+			adc		PTR0
+			sta		PTR0
+		
+			; handle x-position
+CALCORG3	txa
+
+			; divide by 7
+			;sta		PTR2
+			;lsr    	a
+			;lsr    	a
+			;lsr    	a
+			;adc 	PTR2
+			;ror		a
+			;lsr		a
+			;lsr		a
+			;adc 	PTR2
+			;ror		a
+			;lsr		a
+			;lsr		a
+			
+			clc
+			adc		PTR0
+			sta		PTR0
+CALCORG_			
+			rts
+			
+; ******** ******** ******** ******** ******** ******** ******** ********
+; paints the sprite
+; in
+;   PTR0: address (dw) in video page
+;   PTR1: address (dw) of sprite
+			
+PAINTA		
+			ldy		#$00
+			
+			; calc page limit
+			lda		PTR0+1
+			and		#$40
+			beq		PAINTA.10
+			lda 	#$20		; we're on page 2 and want $20
+			sta		PTR2+1
+			jmp		PAINTA.1
+PAINTA.10
+			lda 	#$40		; we're on page 1 and want $40
+			sta		PTR2+1
+			
+PAINTA.1			
+			lda 	(PTR1),y
+			sty 	PTR2
+			ldy 	#$00
+			eor 	(PTR0),y
+			sta 	(PTR0),y
+			ldy 	PTR2
+			iny
+			lda 	(PTR1),y
+			sty 	PTR2
+			ldy 	#$01
+			eor 	(PTR0),y
+			sta 	(PTR0),y
+			ldy 	PTR2
+			iny
+			lda 	(PTR1),y
+			sty 	PTR2
+			ldy 	#$02
+			eor 	(PTR0),y
+			sta 	(PTR0),y
+			ldy 	PTR2
+			iny
+			
+			cpy		#SPRROWS*SPRCOLS
+			beq		PAINTA_
+			
+			ldx		PTR0+1
+			inx					; next line, add $0400
+			inx
+			inx
+			inx
+			
+			txa
+			and		PTR2+1		; hitting page limit
+			bne		PAINTA.3
+			stx		PTR0+1
+			jmp		PAINTA.1
+			
+PAINTA.3	; hitting limit ie after an 8 rows block
+			txa
+			cmp		#$43		; is $3F after +=4 ie is $43?
+			bne		PAINTA.4
+			lda		PTR0
+			and		#$80		; which one
+			bne		PAINTA.5
+
+PAINTA.4	; normal			
+			clc
+			lda		PTR0
+			adc		#$80
+			sta		PTR0
+			lda		PTR0+1
+			adc		#$E4
+			sta		PTR0+1
+			jmp		PAINTA.1
+			
+PAINTA.5	; hitting limit on 3F, 7F or BF row
+			clc
+			lda		PTR0
+			adc		#$A8
+			sta		PTR0
+			lda		PTR0+1
+			adc		#$E0
+			sta		PTR0+1
+			jmp		PAINTA.1
+
+PAINTA_
+			rts
+
+; ******** ******** ******** ******** ******** ******** ******** ********
+; reverts the sprite from bitmap to gfx
+; see http://mirrors.apple2.org.za/ground.icaen.uiowa.edu/MiscInfo/Programming/reverse.bits
+			
+REVSPR
+			lda		#lo SPRSRC
+			sta		PTR0
+			lda		#hi SPRSRC
+			sta		PTR0+1
+			ldy		#SPRROWS*SPRCOLS
+			
+			lda		#$00
+			sta		PTR2 
+			
+REVSPR.1	lda		(PTR0),y
+
+			; absolute bit is 65c02 only
+			;bit		#$00
+			bit		PTR2
+REVSPR.2	php
+			asl		a
+			bne		REVSPR.2
+REVSPR.3	rol		a
+			plp
+			bne 	REVSPR.3
+			
+			sta		(PTR0),y
+			dey
+			bpl		REVSPR.1
+REVSPR_
+			rts
+
+; ******** ******** ******** ******** ******** ******** ******** ********
+; prepare the sprites
+
+PREPSPR	
+			clc
+			lda		#lo SPRSRC
+			sta		PTR0
+			adc		#SPRROWS*SPRCOLS
+			sta		PTR1
+			lda		#hi	SPRSRC
+			sta		PTR0+1
+			adc		#$00
+			sta		PTR1+1
+			
+			ldx		#$06
+			stx		PTR2
+PREPSPR.1			
+			ldy		#$00
+			ldx		#SPRROWS
+PREPSPR.2			
+			; asl, lsr, ror & rol don't support indirect addressing
+			clc
+			lda		(PTR0),y
+			asl		a			; asl 0
+			asl		a			; asl 0 - bit in C
+			sta		(PTR1),y	; temp
+			iny
+			lda		(PTR0),y
+			rol		a			; rol 1 - with C
+			asl		a			; asl 1 - bit in C
+			sta		(PTR1),y	; temp
+			iny
+			lda		(PTR0),y
+			rol		a			; rol 2 - with C
+			asl		a			; asl 2 - ignore C
+			lsr		a			; lsr 2
+			sta		(PTR1),y
+			dey
+			lda		(PTR1),y	; temp
+			lsr		a			; lsr 1
+			sta		(PTR1),y
+			dey
+			lda		(PTR1),y	; temp
+			lsr		a			; lsr 0
+			sta		(PTR1),y
+			iny
+			iny
+			iny
+
+			dex
+			bne		PREPSPR.2
+			
+			ldx		PTR2
+			dex
+			beq		PREPSPR_
+			stx		PTR2
+			
+			lda		PTR1
+			sta		PTR0
+			adc		#SPRROWS*SPRCOLS
+			sta		PTR1
+			lda		PTR1+1
+			sta		PTR0+1
+			adc		#$00
+			sta		PTR1+1
+
+			jmp		PREPSPR.1
+			
+PREPSPR_
+			rts
+
+; ******** ******** ******** ******** ******** ******** ******** ********
+; source of the sprite in bitmap format, 7 bits per byte (lowest is 0)
+
+SPRROWS		equ		$0C
+SPRCOLS		equ		$03
+
+SPRSRC		db		%11000000, %00000000, 00
+			db		%11100000, %00000000, 00
+			db		%01111110, %11100000, 00
+			db		%00111110, %11110000, 00
+			db		%00111110, %01110000, 00
+			db		%00111110, %00111000, 00
+			db		%00111110, %00111000, 00
+			db		%00111110, %01110000, 00
+			db		%00111110, %11110000, 00
+			db		%01111110, %11100000, 00
+			db		%11100000, %00000000, 00
+			db		%11000000, %00000000, 00
+			
+			; and here comes source for the shifted sprites		
+			ds		SPRROWS*SPRCOLS
+			ds		SPRROWS*SPRCOLS
+			ds		SPRROWS*SPRCOLS
+			ds		SPRROWS*SPRCOLS
+			ds		SPRROWS*SPRCOLS
+			ds		SPRROWS*SPRCOLS
+
+			; and here comes source for the blank sprite
+SPRBLK		ds		SPRROWS*SPRCOLS
+			
+			; eof
