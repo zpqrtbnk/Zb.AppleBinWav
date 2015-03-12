@@ -4,6 +4,7 @@ using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Text;
+using System.Threading;
 using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
@@ -14,6 +15,7 @@ using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using System.Windows.Navigation;
 using System.Windows.Shapes;
+using System.Windows.Threading;
 using NAudio.Wave;
 
 namespace ZbAppleBinWav
@@ -37,6 +39,8 @@ namespace ZbAppleBinWav
         }
 
         private WaveOut _waveOut;
+        private WaveStream _waveStream;
+        private DispatcherTimer _dispatcherTimer;
         private byte[] _data;
         private string _filename;
         private FileSystemWatcher _fileWatcher;
@@ -51,29 +55,52 @@ namespace ZbAppleBinWav
 
             if (_waveOut != null)
             {
-                PlayButton.Content = "play";
-                _waveOut.Stop();
-                _waveOut.Dispose();
-                _waveOut = null;
+                EndPlay(true);
                 return;
             }
 
             PlayButton.Content = "stop";
 
-            var waveProvider = new DataWaveProvider(_data);
+            _waveStream = new DataWaveStream(_data);
             _waveOut = new WaveOut();
-            _waveOut.Init(waveProvider);
+            _waveOut.Init(_waveStream);
             _waveOut.Volume = 0.8f;
 
             // only for automatic stop (end of wav) not manual stop
-            _waveOut.PlaybackStopped += (o, args) =>
+            _waveOut.PlaybackStopped += (o, args) => EndPlay();
+
+            var totalTime = _waveStream.TotalTime.TotalMilliseconds;
+
+            _dispatcherTimer = new DispatcherTimer(TimeSpan.FromMilliseconds(250), DispatcherPriority.Normal, delegate
             {
-                PlayButton.Content = "play";
-                _waveOut.Dispose();
-                _waveOut = null;
-            };
+                var waveStream = _waveStream;
+                if (waveStream == null)
+                {
+                    _dispatcherTimer.Stop();
+                    _dispatcherTimer = null;
+                    ProgressRectangle.Width = 0;
+                    return;
+                }
+                var currentTime = waveStream.CurrentTime.TotalMilliseconds;
+                var percent = (double) currentTime / (double) totalTime;
+                Debug.WriteLine("{0} {1} {2} {3}", totalTime, currentTime, percent, ProgressRectangle.MaxWidth*percent);
+                ProgressRectangle.Width = ProgressRectangle.MaxWidth * percent;
+            }, this.Dispatcher);
 
             _waveOut.Play();
+        }
+
+        private void EndPlay(bool stop = false)
+        {
+            if (stop)
+                _waveOut.Stop();
+            PlayButton.Content = "play";
+            _waveOut.Dispose();
+            _waveOut = null;
+            _waveStream.Dispose();
+            _waveStream = null;
+            //_dispatcherTimer.Stop();
+            //_dispatcherTimer = null;
         }
 
         private void Source_Click(object sender, RoutedEventArgs e)

@@ -1,16 +1,20 @@
 ﻿using System;
+using System.Collections.Generic;
 using System.Diagnostics;
+using System.Linq;
+using System.Text;
+using System.Threading.Tasks;
 using NAudio.Wave;
 
 namespace ZbAppleBinWav
 {
-    public class DataWaveProvider : IWaveProvider
+    public class DataWaveStream : WaveStream
     {
         private readonly WaveFormat _waveFormat = new WaveFormat(44100, 8, 1);
         private readonly byte[] _bytes;
         private int _pos;
 
-        public DataWaveProvider(byte[] bytes)
+        public DataWaveStream(byte[] bytes)
         {
             // bytes are DATA bytes not WAV bytes
             // first convert to WAV data
@@ -20,9 +24,31 @@ namespace ZbAppleBinWav
             _bytes = wavBytes;
         }
 
+        public override WaveFormat WaveFormat
+        {
+            get { return _waveFormat; }
+        }
+
+        public override long Length
+        {
+            get { return _bytes.Length; }
+        }
+
+        public override long Position
+        {
+            get
+            {
+                return _pos;
+            }
+            set
+            {
+                throw new NotImplementedException();
+            }
+        }
+
         // returning 0 will stop, anything else will ask for more...
         // offset never increases... because offset is offset within *buffer*
-        public int Read(byte[] buffer, int offset, int count)
+        public override int Read(byte[] buffer, int offset, int count)
         {
             var avail = _bytes.Length - _pos;
             if (avail <= 0)
@@ -41,11 +67,6 @@ namespace ZbAppleBinWav
             Debug.WriteLine("read {0} (length={1}, offset={2}, count={3})", read, _bytes.Length, offset, count);
             _pos += read;
             return read;
-        }
-
-        public WaveFormat WaveFormat
-        {
-            get { return _waveFormat; }
         }
     }
 }

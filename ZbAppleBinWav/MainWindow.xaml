@@ -3,7 +3,7 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         Title="Zb.AppleBinWav" Height="295" Width="600" SizeToContent="WidthAndHeight" WindowStyle="None"
         AllowsTransparency="True">
-    
+
     <Window.Resources>
         <Style x:Key="CustomButton" TargetType="Button">
             <Setter Property="Background" Value="#FFDDDDDD" />
@@ -39,7 +39,7 @@
                    Margin="1,-4,0,0" Padding="0" FontSize="11" Foreground="White" MouseDown="Move_MouseDown" />
             <Label Content="X" Margin="248,-4,0,0" Padding="0" FontSize="11" Foreground="White"
                    VerticalAlignment="Top" HorizontalAlignment="Left" MouseDown="Close_MouseDown"/>
-            
+
             <Button x:Name="PlayButton" Content="play"
                     Style="{StaticResource CustomButton}"
                     HorizontalAlignment="Left" Height="36" Margin="192,124,0,0" VerticalAlignment="Top" Width="64" 
@@ -57,6 +57,7 @@
                     Margin="0,16,0,0">
                 <Label x:Name="FileNameLabel" Content="" HorizontalAlignment="Left" Height="32" Margin="0" VerticalAlignment="Top" Width="256" BorderThickness="1"/>
             </Border>
+            <Rectangle x:Name="ProgressRectangle" Fill="#FF707070" HorizontalAlignment="Left" Height="2" Margin="0,117,0,0" VerticalAlignment="Top" Width="0" MaxWidth="256"/>
         </Grid>
     </Border>
 </Window>
